@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bravo Airlines - Rutas</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+        }
+        .panel {
+            width: 350px;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            margin-right: 20px;
+        }
+        .map-container {
+            position: relative;
+            /* Escalamos el canvas para que quepa en pantallas normales */
+            transform: scale(0.6); 
+            transform-origin: top left;
+        }
+        canvas {
+            border: 2px solid #ccc;
+            border-radius: 8px;
+            cursor: crosshair;
+        }
+        h2 { color: #333; }
+        select, button, input {
+            width: 100%;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+            border: 1px solid #ccc;
+        }
+        button {
+            background-color: #007BFF;
+            color: white;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover { background-color: #0056b3; }
+        #consola {
+            background: #222;
+            color: #0f0;
+            padding: 10px;
+            border-radius: 5px;
+            height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="panel">
+        <h2>✈️ Bravo Airlines</h2>
+        
+        <label for="origen">Origen:</label>
+        <select id="origen"></select>
+
+        <label for="destino">Destino:</label>
+        <select id="destino"></select>
+
+        <button onclick="buscarRutaDirecta()">Buscar Ruta Directa</button>
+        <button onclick="dibujarRedCompleta()">Mostrar Toda la Red</button>
+
+        <div id="consola">Iniciando sistema...<br></div>
+    </div>
+
+    <div class="map-container">
+        <canvas id="mapaCanvas" width="1139" height="1599"></canvas>
+    </div>
+
+    <script>
+        // 1. Datos iniciales migrados de Python a JS
+        const ciudades = ["Lima", "Piura", "Chiclayo", "Trujillo", "Iquitos", "Cusco", "P.maldonado", "Juliaca", "Arequipa"];
+        
+        const matriz = [
+            [0,1,1,1,1,1,0,1,1],
+            [1,0,0,0,0,0,0,0,0],
+            [1,0,0,0,0,0,0,0,0],
+            [1,0,0,0,0,0,0,0,0],
+            [1,0,0,0,0,0,0,0,0],
+            [1,0,0,0,0,0,1,0,1],
+            [0,0,0,0,0,1,0,0,0],
+            [1,0,0,0,0,0,0,0,0],
+            [1,0,0,0,0,1,0,0,0]
+        ];
+
+        // Nota: En canvas Y crece hacia abajo. Si en Python Y crecía hacia arriba, 
+        // restamos el valor original al alto total (1599).
+        const ALTO_MAPA = 1599;
+        const cords = {
+            "Lima": {x: 400, y: ALTO_MAPA - 550},
+            "Piura": {x: 100, y: ALTO_MAPA - 1150},
+            "Chiclayo": {x: 130, y: ALTO_MAPA - 1050},
+            "Trujillo": {x: 260, y: ALTO_MAPA - 900},
+            "Iquitos": {x: 550, y: ALTO_MAPA - 1200},
+            "Cusco": {x: 800, y: ALTO_MAPA - 450},
+            "P.maldonado": {x: 950, y: ALTO_MAPA - 550},
+            "Juliaca": {x: 980, y: ALTO_MAPA - 350},
+            "Arequipa": {x: 800, y: ALTO_MAPA - 200}
+        };
+
+        const canvas = document.getElementById('mapaCanvas');
+        const ctx = canvas.getContext('2d');
+        const mapaImg = new Image();
+        mapaImg.src = 'mapa.png'; // Tu archivo de imagen local
+
+        // 2. Inicialización de la interfaz
+        function inicializar() {
+            const selectOrigen = document.getElementById('origen');
+            const selectDestino = document.getElementById('destino');
+            
+            ciudades.forEach(ciudad => {
+                selectOrigen.innerHTML += `<option value="${ciudad}">${ciudad}</option>`;
+                selectDestino.innerHTML += `<option value="${ciudad}">${ciudad}</option>`;
+            });
+
+            mapaImg.onload = () => dibujarRedCompleta();
+        }
+
+        function log(mensaje) {
+            const consola = document.getElementById('consola');
+            consola.innerHTML += `> ${mensaje}<br>`;
+            consola.scrollTop = consola.scrollHeight;
+        }
+
+        // 3. Funciones de Dibujo en Canvas
+        function limpiarCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.globalAlpha = 0.6;
+            ctx.drawImage(mapaImg, 0, 0, canvas.width, canvas.height);
+            ctx.globalAlpha = 1.0;
+        }
+
+        function dibujarNodo(ciudad, color = '#FF8C00') {
+            const pos = cords[ciudad];
+            ctx.beginPath();
+            ctx.arc(pos.x, pos.y, 15, 0, 2 * Math.PI);
+            ctx.fillStyle = color;
+            ctx.fill();
+            ctx.lineWidth = 3;
+            ctx.strokeStyle = '#333';
+            ctx.stroke();
+
+            // Etiqueta de texto
+            ctx.fillStyle = 'black';
+            ctx.font = 'bold 20px Arial';
+            ctx.fillText(ciudad, pos.x + 20, pos.y + 5);
+        }
+
+        function dibujarArista(origen, destino, color = 'gray', grosor = 2) {
+            const pos1 = cords[origen];
+            const pos2 = cords[destino];
+            
+            ctx.beginPath();
+            ctx.moveTo(pos1.x, pos1.y);
+            ctx.lineTo(pos2.x, pos2.y);
+            ctx.strokeStyle = color;
+            ctx.lineWidth = grosor;
+            ctx.stroke();
+        }
+
+        function dibujarRedCompleta() {
+            limpiarCanvas();
+            log("Mostrando rutas actuales...");
+            
+            // Dibujar líneas primero para que queden detrás de los nodos
+            for (let i = 0; i < matriz.length; i++) {
+                for (let j = 0; j < matriz[i].length; j++) {
+                    if (matriz[i][j] === 1) {
+                        dibujarArista(ciudades[i], ciudades[j]);
+                    }
+                }
+            }
+            // Dibujar nodos
+            ciudades.forEach(c => dibujarNodo(c));
+        }
+
+        // 4. Lógica de Búsqueda Simple (equivalente básico)
+        function buscarRutaDirecta() {
+            const origen = document.getElementById('origen').value;
+            const destino = document.getElementById('destino').value;
+            
+            const i = ciudades.indexOf(origen);
+            const j = ciudades.indexOf(destino);
+
+            limpiarCanvas();
+            ciudades.forEach(c => dibujarNodo(c, '#555')); // Nodos inactivos
+
+            if (matriz[i][j] === 1) {
+                dibujarArista(origen, destino, 'blue', 5);
+                dibujarNodo(origen, '#00FF7F');
+                dibujarNodo(destino, '#00FF7F');
+                log(`Ruta directa encontrada: ${origen} -> ${destino}`);
+                
+                // Calcular distancia
+                const dx = cords[destino].x - cords[origen].x;
+                const dy = cords[destino].y - cords[origen].y;
+                const dist = Math.hypot(dx, dy) * 1.508;
+                log(`Distancia aprox: ${Math.round(dist)} km`);
+            } else {
+                log(`No hay ruta DIRECTA entre ${origen} y ${destino}`);
+                dibujarRedCompleta();
+            }
+        }
+
+        // 5. Modo Editor Interactivo (Clicks en el mapa)
+        canvas.addEventListener('mousedown', function(e) {
+            const rect = canvas.getBoundingClientRect();
+            // Ajustamos las coordenadas tomando en cuenta el escalado (0.6)
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const x = (e.clientX - rect.left) * scaleX;
+            const y = (e.clientY - rect.top) * scaleY;
+            
+            log(`Clic detectado en X:${Math.round(x)}, Y:${Math.round(y)}`);
+            // Aquí puedes agregar la lógica de tu función expandirMatriz() mediante prompts
+        });
+
+        inicializar();
+    </script>
+</body>
+</html>
