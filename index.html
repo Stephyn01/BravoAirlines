@@ -125,7 +125,7 @@
                 </h3>
                 <div class="overflow-x-auto rounded-lg border border-outline-variant">
                     <table class="min-w-full divide-y divide-outline-variant text-sm text-center" id="tablaMatriz">
-                        </table>
+                    </table>
                 </div>
             </div>
         </main>
@@ -168,7 +168,7 @@
 
     <script>
         let isAdmin = false;
-        let vistaActualAdmin = 'mapa'; // 'mapa' o 'matriz'
+        let vistaActualAdmin = 'mapa'; 
         const PRECIO_KM = 0.07;
         const KM_UNIDAD = 1.508;
         const ALTO_MAPA = 1599;
@@ -179,7 +179,7 @@
         let pulseRadius = 15;
         let pulseGrowing = true;
 
-        const ciudades = ["Lima", "Piura", "Chiclayo", "Trujillo", "Iquitos", "Cusco", "P.maldonado", "Juliaca", "Arequipa"];
+        const ciudades = ["Lima", "Piura", "Chiclayo", "Trujillo", "Iquitos", "Cusco", "P.malonado", "Juliaca", "Arequipa"];
         const matriz = [
             [0,1,1,1,1,1,0,1,1], [1,0,0,0,0,0,0,0,0], [1,0,0,0,0,0,0,0,0],
             [1,0,0,0,0,0,0,0,0], [1,0,0,0,0,0,0,0,0], [1,0,0,0,0,0,1,0,1],
@@ -217,7 +217,6 @@
             canvas.classList.toggle('admin-cursor', isAdmin);
             canvas.classList.toggle('user-cursor', !isAdmin);
 
-            // Reestablece siempre a la vista de mapa si abandona el modo admin
             if (!isAdmin) {
                 cambiarVistaAdmin('mapa');
             }
@@ -254,7 +253,6 @@
             const tabla = document.getElementById('tablaMatriz');
             let html = "";
 
-            // Generación de cabeceras superiores (Destinos)
             html += `<thead><tr class="bg-surface-container font-bold text-on-surface">`;
             html += `<th class="p-3 border border-outline-variant text-left bg-surface-variant font-semibold text-xs tracking-wider">Origen \\ Destino</th>`;
             ciudades.forEach(c => {
@@ -262,7 +260,6 @@
             });
             html += `</tr></thead>`;
 
-            // Generación de filas de datos
             html += `<tbody class="divide-y divide-outline-variant">`;
             for (let i = 0; i < ciudades.length; i++) {
                 html += `<tr class="hover:bg-surface-container-low transition-colors">`;
@@ -270,7 +267,6 @@
                 
                 for (let j = 0; j < ciudades.length; j++) {
                     const valor = matriz[i][j];
-                    // Resaltar celdas activas (1) con color secundario suave
                     const estilosCelda = valor === 1 
                         ? "bg-secondary/10 text-secondary font-bold text-base" 
                         : "text-on-surface-variant/20 font-normal";
@@ -416,6 +412,10 @@
                 return;
             }
 
+            // Constantes de control geográfico y de eficiencia
+            const maxKilometros = 1500;
+            const factorDesvio = 1.7;
+
             let visitados = new Set();
             let rutasEncontradas = [];
 
@@ -430,6 +430,12 @@
                     if (matriz[idx][i] === 1 && !visitados.has(ciudades[i])) {
                         let cAct = cords[actual], cSig = cords[ciudades[i]];
                         let distTramo = Math.hypot(cSig.x - cAct.x, cSig.y - cAct.y) * KM_UNIDAD;
+                        
+                        // Filtro 1: Descartar tramos individuales ilógicos (que superen los 1500km)
+                        if (distTramo > maxKilometros) {
+                            continue;
+                        }
+
                         camino.push(ciudades[i]);
                         dfs(ciudades[i], camino, distTotal + distTramo);
                         camino.pop();
@@ -443,12 +449,25 @@
             if (rutasEncontradas.length === 0) {
                 mostrarMensaje(`No hay conexión disponible entre ${origen} y ${destino}.`);
                 cerrarRutas(); 
-            } else {
-                rutasEncontradas.sort((a, b) => a.distancia - b.distancia);
-                dibujarRutaEnMapa(rutasEncontradas[0].ruta); 
-                renderizarTarjetasDeRuta(rutasEncontradas);
-                mostrarMensaje(`Se encontraron ${rutasEncontradas.length} ruta(s).`, true);
+                return;
             }
+
+            // Ordenar las rutas de menor a mayor distancia para determinar el camino más corto
+            rutasEncontradas.sort((a, b) => a.distancia - b.distancia);
+            const distanciaOptima = rutasEncontradas[0].distancia;
+
+            // Filtro 2: Excluir opciones cuyo desvío total sea excesivo (mayor al factor 1.7)
+            let rutasFiltradas = rutasEncontradas.filter(r => r.distancia <= distanciaOptima * factorDesvio);
+
+            if (rutasFiltradas.length === 0) {
+                mostrarMensaje("Todas las rutas disponibles superan los límites geográficos lógicos.");
+                cerrarRutas();
+                return;
+            }
+
+            dibujarRutaEnMapa(rutasFiltradas[0].ruta); 
+            renderizarTarjetasDeRuta(rutasFiltradas);
+            mostrarMensaje(`Se encontraron ${rutasFiltradas.length} ruta(s) lógica(s).`, true);
         }
 
         function mostrarMensaje(msg, esExito = false) {
